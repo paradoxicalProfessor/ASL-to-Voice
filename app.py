@@ -1,6 +1,6 @@
 """
-ASL to Voice - Gradio Interface for Hugging Face Spaces
-Real-time ASL detection with text-to-speech
+ASL to Voice - Optimized Gradio Interface
+Snapshot-based detection for better performance
 """
 
 import gradio as gr
@@ -12,11 +12,12 @@ import time
 
 # Global variables
 model = None
-detection_history = deque(maxlen=15)
+detection_history = deque(maxlen=10)
 current_word = ""
 sentence = []
 last_letter = None
 last_letter_time = 0
+letter_cooldown = 1.0
 
 def load_model():
     """Load YOLOv8 model"""
@@ -27,34 +28,26 @@ def load_model():
         print("✅ Model loaded successfully")
     return model
 
-def get_smoothed_prediction():
-    """Get most common prediction over recent frames"""
-    if len(detection_history) < 8:
-        return None, 0.0
-    
-    letter_counts = Counter(detection_history)
-    if letter_counts:
-        most_common_letter, count = letter_counts.most_common(1)[0]
-        confidence = count / len(detection_history)
-        if count >= 8:
-            return most_common_letter, confidence
-    return None, 0.0
-
-def detect_and_annotate(image):
-    """Process image and detect ASL sign - returns annotated image and text"""
+def detect_sign(image):
+    """Detect ASL sign from image and return annotated image with detection info"""
     global detection_history
     
     if image is None:
-        return None, "No camera input", "—", "", " ".join(sentence)
+        return None, "—", "—", current_word, " ".join(sentence)
     
     # Load model
     model = load_model()
     
     # Convert to BGR for OpenCV
-    image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+    if len(image.shape) == 2:
+        image_bgr = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    elif image.shape[2] == 4:
+        image_bgr = cv2.cvtColor(image, cv2.COLOR_RGBA2BGR)
+    else:
+        image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
     
     # Run detection
-    results = model(image_bgr, conf=0.6, verbose=False)
+    results = model(image_bgr, conf=0.5, verbose=False)
     
     # Extract detections
     detected_letter = None
@@ -82,25 +75,35 @@ def detect_and_annotate(image):
         detection_history.append(None)
     
     # Get smoothed prediction
-    smoothed_letter, smoothed_conf = get_smoothed_prediction()
+    smoothed_letter = None
+    smoothed_conf = 0.0
+    if len(detection_history) >= 5:
+        letter_counts = Counter([l for l in detection_history if l is not None])
+        if letter_counts:
+            smoothed_letter, count = letter_counts.most_common(1)[0]
+            smoothed_conf = count / len([l for l in detection_history if l is not None])
     
     # Format output
-    raw_text = f"{detected_letter} ({confidence:.1%})" if detected_letter else "—"
-    stable_text = f"{smoothed_letter} ({smoothed_conf:.1%})" if smoothed_letter else "—"
+    raw_text = f"{detected_letter} ({confidence:.0%})" if detected_letter else "—"
+    stable_text = f"{smoothed_letter} ({smoothed_conf:.0%})" if smoothed_letter else "—"
     
     return annotated_image, raw_text, stable_text, current_word, " ".join(sentence)
 
 def add_letter():
-    """Add detected letter to current word"""
+    """Add stable detected letter to current word"""
     global current_word, last_letter, last_letter_time, detection_history
     
-    smoothed_letter, smoothed_conf = get_smoothed_prediction()
+    if len(detection_history) < 5:
+        return current_word, " ".join(sentence), "⚠️ Need more detections - take more snapshots!"
     
-    if smoothed_letter is None:
+    letter_counts = Counter([l for l in detection_history if l is not None])
+    if not letter_counts:
         return current_word, " ".join(sentence), "⚠️ No stable letter detected"
     
+    smoothed_letter, count = letter_counts.most_common(1)[0]
+    
     current_time = time.time()
-    if smoothed_letter == last_letter and (current_time - last_letter_time) < 1.5:
+    if smoothed_letter == last_letter and (current_time - last_letter_time) < letter_cooldown:
         return current_word, " ".join(sentence), "⏳ Cooldown active"
     
     current_word += smoothed_letter
@@ -118,6 +121,7 @@ def add_space():
         sentence.append(current_word)
         current_word = ""
         last_letter = None
+        detection_history.clear()
         return current_word, " ".join(sentence), "✅ Word added"
     return current_word, " ".join(sentence), "⚠️ No word to add"
 
@@ -146,56 +150,54 @@ def delete_char():
 
 def clear_word():
     """Clear current word"""
-    global current_word, last_letter
+    global current_word, last_letter, detection_history
     
     current_word = ""
     last_letter = None
+    detection_history.clear()
     return current_word, " ".join(sentence), "✅ Word cleared"
 
 def reset_all():
     """Reset everything"""
-    global current_word, sentence, last_letter
+    global current_word, sentence, last_letter, detection_history
     
     current_word = ""
     sentence = []
     last_letter = None
+    detection_history.clear()
     return current_word, " ".join(sentence), "✅ Reset complete"
 
-def speak_sentence():
-    """Return sentence for TTS"""
-    global sentence
-    if sentence:
-        text = " ".join(sentence)
-        return text, "🔊 Speaking..."
-    return "", "⚠️ No sentence to speak"
-
 # Create Gradio interface
-with gr.Blocks(title="ASL to Voice") as demo:
+with gr.Blocks(title="ASL to Voice", theme=gr.themes.Soft()) as demo:
     gr.Markdown("""
-    # 🤟 ASL to Voice - Real-Time Sign Language Detection
+    # 🤟 ASL to Voice - Sign Language Detection
     
-    Convert American Sign Language alphabet signs to text and speech!
+    **Snapshot Mode for Fast Performance!**
     
-    **Instructions:**
-    1. Allow webcam access
-    2. Show an ASL sign clearly to the camera
-    3. Wait for "Stable Letter" to show consistently
-    4. Click "Add Letter" to build your word
-    5. Click "Space" to move to the next word
+    ### How to Use:
+    1. Allow webcam access and show an ASL sign
+    2. Click **"Capture & Detect"** button (or press spacebar)
+    3. Take 3-5 snapshots of the same sign for accuracy
+    4. Click **"Add Letter"** to add the detected letter
+    5. Build words and sentences!
     """)
     
     with gr.Row():
-        with gr.Column():
-            webcam_input = gr.Image(label="Webcam", source="webcam", streaming=True)
-            with gr.Row():
-                raw_out = gr.Textbox(label="Raw Detection", value="—")
-                stable_out = gr.Textbox(label="Stable Letter", value="—")
-        
-        with gr.Column():
-            word_out = gr.Textbox(label="Current Word", value="")
-            sent_out = gr.Textbox(label="Sentence", value="", lines=3)
-            status_out = gr.Textbox(label="Status", value="Ready")
+        with gr.Column(scale=2):
+            webcam_input = gr.Image(label="📷 Webcam", sources=["webcam"], type="numpy")
+            detect_btn = gr.Button("📸 Capture & Detect", variant="primary", size="lg")
             
+            with gr.Row():
+                raw_out = gr.Textbox(label="Instant Detection", value="—", scale=1)
+                stable_out = gr.Textbox(label="⭐ Stable Letter", value="—", scale=1)
+        
+        with gr.Column(scale=1):
+            gr.Markdown("### 📝 Text Output")
+            word_out = gr.Textbox(label="Current Word", value="", placeholder="Building word...")
+            sent_out = gr.Textbox(label="Sentence", value="", lines=3, placeholder="Your sentence will appear here")
+            status_out = gr.Textbox(label="Status", value="Ready", interactive=False)
+            
+            gr.Markdown("### 🎯 Controls")
             with gr.Row():
                 add_btn = gr.Button("➕ Add Letter", variant="primary")
                 space_btn = gr.Button("⎵ Space")
@@ -207,19 +209,28 @@ with gr.Blocks(title="ASL to Voice") as demo:
                 question_btn = gr.Button("?")
             
             with gr.Row():
-                delete_btn = gr.Button("⌫ Delete")
-                clear_btn = gr.Button("Clear Word")
-                reset_btn = gr.Button("Reset All", variant="stop")
-            
-            tts_out = gr.Textbox(label="Text to Speak")
-            speak_btn = gr.Button("🔊 Speak", variant="primary")
+                delete_btn = gr.Button("⌫ Delete", variant="secondary")
+                clear_btn = gr.Button("Clear Word", variant="secondary")
+                reset_btn = gr.Button("🔄 Reset All", variant="stop")
+    
+    gr.Markdown("""
+    ---
+    ### 💡 Tips for Best Results
+    - 📸 Take 3-5 snapshots of the same sign before clicking "Add Letter"
+    - ✋ Keep your hand steady and clearly visible
+    - 💡 Good lighting helps accuracy
+    - 🎯 Wait for "Stable Letter" to show consistently
+    
+    ### 🎯 Model Info
+    - **Accuracy:** 96.2% mAP@0.5
+    - **Classes:** 26 ASL alphabet signs (A-Z)
+    """)
     
     # Event handlers
-    webcam_input.stream(
-        detect_and_annotate,
+    detect_btn.click(
+        detect_sign,
         inputs=[webcam_input],
-        outputs=[webcam_input, raw_out, stable_out, word_out, sent_out],
-        stream_every=0.1
+        outputs=[webcam_input, raw_out, stable_out, word_out, sent_out]
     )
     
     add_btn.click(add_letter, outputs=[word_out, sent_out, status_out])
@@ -233,20 +244,6 @@ with gr.Blocks(title="ASL to Voice") as demo:
     delete_btn.click(delete_char, outputs=[word_out, sent_out, status_out])
     clear_btn.click(clear_word, outputs=[word_out, sent_out, status_out])
     reset_btn.click(reset_all, outputs=[word_out, sent_out, status_out])
-    
-    speak_btn.click(speak_sentence, outputs=[tts_out, status_out])
-    
-    gr.Markdown("""
-    ---
-    ### 🎯 Model Performance
-    - **Accuracy:** 96.2% mAP@0.5
-    - **Classes:** 26 ASL alphabet signs (A-Z)
-    
-    ### 💡 Tips
-    - Good lighting helps
-    - Keep hand clearly visible
-    - Hold sign steady for 1-2 seconds
-    """)
 
 # Launch
 if __name__ == "__main__":

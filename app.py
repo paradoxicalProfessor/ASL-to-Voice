@@ -186,7 +186,7 @@ with gr.Blocks(title="ASL to Voice") as demo:
     
     with gr.Row():
         with gr.Column():
-            webcam_input = gr.Image(label="Webcam", sources=["webcam"], streaming=True)
+            webcam_input = gr.Image(label="Webcam", source="webcam", streaming=True)
             with gr.Row():
                 raw_out = gr.Textbox(label="Raw Detection", value="—")
                 stable_out = gr.Textbox(label="Stable Letter", value="—")

@@ -35,7 +35,7 @@ Before you begin, make sure you have:
 
 ---
 
-## 🔧 Step 2: Configure Hugging Face Remote
+## 🔧 Step 2: Prepare Your Local Repository
 
 ### 2.1 Open PowerShell/Terminal
 Navigate to your project folder:
@@ -43,20 +43,20 @@ Navigate to your project folder:
 cd C:\personal\Defense\ASL_to_Voice
 ```
 
-### 2.2 Check/Set Hugging Face Remote
-Check if remote exists:
+### 2.2 Initialize Git (if not already done)
 ```powershell
-git remote -v
+git init
 ```
 
-If no remote named "origin" exists, add it:
+### 2.3 Add Hugging Face Remote
+Replace `YOUR-USERNAME` and `SPACE-NAME` with your actual values:
 ```powershell
 git remote add origin https://huggingface.co/spaces/researchpurpose/asl-to-voice
 ```
 
-If remote already exists but needs updating:
+Example:
 ```powershell
-git remote set-url origin https://huggingface.co/spaces/researchpurpose/asl-to-voice
+git remote add origin https://huggingface.co/spaces/researchpurpose/asl-to-voice
 ```
 
 ---
@@ -136,7 +136,7 @@ git push -u origin main
 ## ⏳ Step 6: Wait for Build
 
 ### 6.1 Monitor Build Progress
-1. Go to your Space URL: `https://huggingface.co/spaces/researchpurpose/asl-to-voice`
+1. Go to your Space URL: `https://huggingface.co/spaces/YOUR-USERNAME/SPACE-NAME`
 2. You'll see a "Building" status with logs
 3. The build process takes **5-10 minutes** (downloading dependencies + loading model)
 
@@ -244,7 +244,7 @@ Test-Path "runs/train/asl_detection/weights/best.pt"
 
 Your ASL to Voice app is now live and publicly accessible at:
 ```
-https://huggingface.co/spaces/researchpurpose/asl-to-voice
+https://huggingface.co/spaces/YOUR-USERNAME/SPACE-NAME
 ```
 
 ### Share Your Space:
